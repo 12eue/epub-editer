@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#19324a"/>
+      <stop offset="1" stop-color="#0b1117"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7e8"/>
+      <stop offset="1" stop-color="#f0ddbd"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <path d="M260 188c0-35 28-63 63-63h299l182 182v529c0 35-28 63-63 63H323c-35 0-63-28-63-63V188z" fill="url(#page)"/>
+  <path d="M622 125v119c0 35 28 63 63 63h119L622 125z" fill="#d7b87e"/>
+  <path d="M360 426h244v42H360zM360 520h304v42H360zM360 614h274v42H360zM360 708h190v42H360z" fill="#375066"/>
+  <path d="M117 286h164c29 0 53 24 53 53v440c0-29 24-53 53-53h165v-42H387c-29 0-53 24-53 53V339c0-29 24-53 53-53h-6 0-164c-29 0-53 24-53 53v440c0-29 24-53 53-53h77v-42h-77c-29 0-53 24-53 53V339c0-29 24-53 53-53z" fill="#51d2a6"/>
+  <path d="M697 858l91-221 57 23-75 182 180-82 25 55-238 110-40-67z" fill="#51d2a6"/>
+</svg>

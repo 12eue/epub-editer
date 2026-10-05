@@ -1,0 +1,9 @@
+EPUB Studio is an independent Electron implementation informed by the behavior and
+feature model of Sigil and PageEdit. Sigil and PageEdit are free software projects
+licensed under GPL-3.0-or-later.
+
+No Qt/C++ source from Sigil or PageEdit is compiled into EPUB Studio. Their source
+repositories remain in reference/ for feature study and provenance.
+
+The bundled JSZip library is Copyright (c) 2009-2016 Stuart Knightley and
+contributors, dual licensed under MIT or GPLv3.

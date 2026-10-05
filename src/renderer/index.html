@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data: blob:; frame-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>EPUB Studio</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header id="app-toolbar" class="app-toolbar">
+      <div class="toolbar-brand" title="EPUB Studio">
+        <span class="brand-mark">ES</span>
+        <span class="brand-copy"><strong>EPUB Studio</strong><small id="book-title">阅读与编辑一体化</small></span>
+      </div>
+      <div class="toolbar-separator"></div>
+      <div class="toolbar-group">
+        <button class="tool-button" data-command="open" title="打开 EPUB (⌘O)">打开</button>
+        <button class="tool-button" data-command="save" title="保存 EPUB (⌘S)">保存</button>
+      </div>
+      <div class="toolbar-group" role="group" aria-label="侧边栏显示">
+        <button id="toggle-left-sidebar" class="tool-button sidebar-toggle" data-command="toggle-left" aria-pressed="true" title="收起/展开左侧栏 (⌘⇧B)">左栏</button>
+        <button id="toggle-right-sidebar" class="tool-button sidebar-toggle" data-command="toggle-right" aria-pressed="true" title="收起/展开右侧栏 (⌘⇧T)">右栏</button>
+      </div>
+      <div class="toolbar-spacer"></div>
+      <div class="mode-switch" role="group" aria-label="正文模式">
+        <button data-mode="html" title="HTML 编辑模式">HTML</button>
+        <button data-mode="preview" title="预览文本编辑模式">预览编辑</button>
+        <button data-mode="read" title="纯阅读模式">阅读</button>
+      </div>
+    </header>
+
+    <div id="format-toolbar" class="format-toolbar" hidden>
+      <div class="format-group">
+        <button data-format="undo" title="撤销">↶</button>
+        <button data-format="redo" title="重做">↷</button>
+      </div>
+      <div class="format-group">
+        <select data-format-select="heading" title="标题样式" aria-label="标题样式">
+          <option value="0">正文</option><option value="1">标题 1</option><option value="2">标题 2</option>
+          <option value="3">标题 3</option><option value="4">标题 4</option><option value="5">标题 5</option><option value="6">标题 6</option>
+        </select>
+      </div>
+      <div class="format-group">
+        <button data-format="bold" title="粗体"><strong>B</strong></button>
+        <button data-format="italic" title="斜体"><em>I</em></button>
+        <button data-format="underline" title="下划线"><u>U</u></button>
+        <button data-format="strikeThrough" title="删除线"><s>S</s></button>
+        <button data-format="subscript" title="下标">x₂</button>
+        <button data-format="superscript" title="上标">x²</button>
+      </div>
+      <div class="format-group">
+        <button data-format="justifyLeft" title="左对齐">≡</button>
+        <button data-format="justifyCenter" title="居中">≣</button>
+        <button data-format="justifyRight" title="右对齐">≡</button>
+        <button data-format="justifyFull" title="两端对齐">☰</button>
+        <button data-format="outdent" title="减少缩进">⇤</button>
+        <button data-format="indent" title="增加缩进">⇥</button>
+      </div>
+      <div class="format-group">
+        <button data-format="insertUnorderedList" title="无序列表">•≡</button>
+        <button data-format="insertOrderedList" title="有序列表">1≡</button>
+        <button data-format="createLink" title="插入链接">🔗</button>
+        <button data-format="insertImage" title="插入图片">▧</button>
+        <button data-format="insertHorizontalRule" title="分节标记">―</button>
+      </div>
+      <div class="format-group">
+        <button data-command="insert-character" title="特殊字符">Ω</button>
+        <button data-command="insert-id" title="插入 ID">#</button>
+        <button data-command="show-inspector" title="检查元素">⌕</button>
+      </div>
+      <div class="toolbar-spacer"></div>
+      <div class="format-group nav-group">
+        <button data-command="spine-prev" title="上一节">‹</button>
+        <span id="spine-position" class="spine-position">0 / 0</span>
+        <button data-command="spine-next" title="下一节">›</button>
+      </div>
+    </div>
+
+    <div id="workspace" class="workspace" hidden>
+      <aside id="left-sidebar" class="sidebar left-sidebar">
+        <div class="sidebar-tabs" data-sidebar="left">
+          <button class="active" data-panel="files">书籍</button>
+          <button data-panel="search">搜索</button>
+          <button data-panel="clips">片段</button>
+          <button data-panel="images">图片</button>
+        </div>
+        <div id="left-sidebar-content" class="sidebar-content"></div>
+      </aside>
+      <div id="left-sidebar-resizer" class="sidebar-resizer" data-resize="left"></div>
+      <main class="document-area">
+        <div class="document-header">
+          <div id="document-tabs" class="document-tabs"></div>
+          <div class="document-actions">
+            <span id="resource-kind" class="resource-kind"></span>
+            <button class="mini-button" data-command="rename-resource" title="重命名资源">重命名</button>
+            <button class="mini-button danger" data-command="delete-resource" title="删除资源">删除</button>
+          </div>
+        </div>
+        <div id="document-host" class="document-host"></div>
+      </main>
+      <div id="right-sidebar-resizer" class="sidebar-resizer" data-resize="right"></div>
+      <aside id="right-sidebar" class="sidebar right-sidebar">
+        <div class="sidebar-tabs" data-sidebar="right">
+          <button class="active" data-panel="toc">目录</button>
+          <button data-panel="bookmarks">书签</button>
+          <button data-panel="inspector">检查器</button>
+          <button data-panel="metadata">元数据</button>
+          <button data-panel="report">报告</button>
+          <button data-panel="validation">验证</button>
+        </div>
+        <div id="right-sidebar-content" class="sidebar-content"></div>
+      </aside>
+    </div>
+
+    <section id="welcome" class="welcome-screen">
+      <div class="welcome-glow"></div>
+      <div class="welcome-card">
+        <div class="welcome-brand"><span>ES</span><p>EPUB Studio</p></div>
+        <h1>把阅读和编辑留在同一本书里</h1>
+        <p>打开 EPUB 后可随时在 HTML 源码、可视化文本编辑和纯阅读模式之间切换。目录和书签始终位于正文右侧。</p>
+        <div class="welcome-actions">
+          <button class="button primary large" data-command="open">打开 EPUB</button>
+          <button class="button ghost large" data-command="new-epub3">新建 EPUB 3</button>
+          <button class="button ghost large" data-command="new-epub2">新建 EPUB 2</button>
+        </div>
+        <div id="recent-books" class="recent-books"></div>
+      </div>
+    </section>
+
+    <div id="statusbar" class="statusbar">
+      <span id="status-message">就绪</span>
+      <span class="status-spacer"></span>
+      <span id="status-dirty"></span>
+      <span id="status-location"></span>
+      <span id="status-spellcheck"></span>
+    </div>
+  </div>
+
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script src="vendor/jszip.min.js"></script>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>

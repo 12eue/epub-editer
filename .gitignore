@@ -1,0 +1,7 @@
+node_modules/
+dist/
+release/
+reference/
+*.log
+.DS_Store
+npm-debug.log*

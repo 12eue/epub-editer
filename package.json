@@ -1,0 +1,86 @@
+{
+  "name": "epub-studio",
+  "productName": "EPUB Studio",
+  "version": "1.0.0",
+  "description": "Integrated EPUB reader and editor inspired by Sigil and PageEdit.",
+  "main": "src/main/main.cjs",
+  "author": "EPUB Studio Contributors",
+  "license": "GPL-3.0-or-later",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.mjs",
+    "verify": "npm run test && npm run dist:dir",
+    "dist": "electron-builder",
+    "dist:dir": "electron-builder --dir",
+    "dist:mac": "electron-builder --mac dmg zip --x64 --arm64",
+    "dist:win": "electron-builder --win nsis portable --x64 --arm64",
+    "release": "electron-builder --publish always"
+  },
+  "dependencies": {
+    "jszip": "3.10.2"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "dev.epubstudio.app",
+    "productName": "EPUB Studio",
+    "copyright": "Copyright © 2026 EPUB Studio Contributors",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "package.json",
+      "LICENSE",
+      "NOTICE",
+      "node_modules/jszip/**/*"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.books",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "icon": "icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EPUB Studio"
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    },
+    "fileAssociations": [
+      {
+        "ext": "epub",
+        "name": "EPUB publication",
+        "role": "Editor"
+      }
+    ],
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    }
+  }
+}
