@@ -41,7 +41,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,10 +52,14 @@ jobs:
       - name: Build Windows x64 and arm64
         if: matrix.target == 'win'
         shell: bash
+        env:
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: npx electron-builder --win nsis portable --x64 --arm64 --publish never
       - name: Build macOS x64 and arm64
         if: matrix.target == 'mac'
         shell: bash
+        env:
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
         run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never
       - name: Upload installers
         uses: actions/upload-artifact@v4
