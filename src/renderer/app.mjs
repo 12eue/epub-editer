@@ -29,7 +29,13 @@ import {
   uniqueId,
   uuid,
 } from './core/utils.mjs';
-import { searchBook, replaceMatches, findMatches, expandReplacement } from './core/search.mjs';
+import {
+  searchBook,
+  replaceMatches,
+  replaceMatchesAtOffsets,
+  findMatches,
+  expandReplacement,
+} from './core/search.mjs';
 import { CodeEditor } from './ui/code-editor.mjs';
 import {
   alertDialog,
@@ -58,6 +64,7 @@ const state = {
   openPaths: [],
   mode: 'preview',
   leftPanel: 'files',
+  findVisible: false,
   rightPanel: 'toc',
   leftVisible: true,
   rightVisible: true,
@@ -68,6 +75,7 @@ const state = {
   tocSelectedIndex: '',
   bookmarks: [],
   clips: [],
+  savedSearches: [],
   validation: null,
   validationTitle: '',
   report: null,
@@ -101,6 +109,8 @@ const elements = {
   leftResizer: $('#left-sidebar-resizer'),
   rightResizer: $('#right-sidebar-resizer'),
   leftContent: $('#left-sidebar-content'),
+  findDock: $('#find-dock'),
+  findDockContent: $('#find-dock-content'),
   rightContent: $('#right-sidebar-content'),
   toggleLeftSidebar: $('#toggle-left-sidebar'),
   toggleRightSidebar: $('#toggle-right-sidebar'),
@@ -239,12 +249,15 @@ function renderShell() {
   updateDirtyStatus();
   applySettings();
   if (!hasBook) {
+    state.findVisible = false;
+    if (elements.findDock) elements.findDock.hidden = true;
     renderRecentBooks();
     return;
   }
   renderDocumentTabs();
   renderLeftSidebar();
   renderRightSidebar();
+  renderSearchDock();
   renderDocument();
   updateSpinePosition();
 }
@@ -283,7 +296,6 @@ function renderLeftSidebar() {
   $$('[data-sidebar="left"] button').forEach((button) => button.classList.toggle('active', button.dataset.panel === state.leftPanel));
   if (!state.book) return;
   if (state.leftPanel === 'files') renderFilesPanel();
-  else if (state.leftPanel === 'search') renderSearchPanel();
   else if (state.leftPanel === 'images') renderImagesPanel();
   else renderClipsPanel();
 }
@@ -419,6 +431,7 @@ function ensureFindState() {
     index: -1,
     options: { regex: false, caseSensitive: false, wholeWord: false },
     scopeAll: false,
+    selected: [],
     error: null,
     activePath: '',
   };
@@ -429,13 +442,60 @@ function ensureFindState() {
   state.find.replace = String(state.find.replace || '');
   state.find.scopeAll = Boolean(state.find.scopeAll);
   state.find.index = Number.isInteger(state.find.index) ? state.find.index : -1;
+  state.find.selected = Array.isArray(state.find.selected) ? state.find.selected : [];
   return state.find;
+}
+
+const SAVED_SEARCHES_KEY = 'epub-studio:saved-searches';
+
+function loadSavedSearches() {
+  try {
+    const entries = JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || '[]');
+    return Array.isArray(entries) ? entries.filter((entry) => entry?.id && entry?.name && entry?.query).map((entry) => ({
+      id: String(entry.id),
+      name: String(entry.name),
+      query: String(entry.query),
+      replace: String(entry.replace || ''),
+      options: {
+        regex: Boolean(entry.options?.regex),
+        caseSensitive: Boolean(entry.options?.caseSensitive),
+        wholeWord: Boolean(entry.options?.wholeWord),
+      },
+      scopeAll: Boolean(entry.scopeAll),
+      updatedAt: entry.updatedAt || new Date().toISOString(),
+    })) : [];
+  } catch { return []; }
+}
+
+function saveSavedSearches() {
+  localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(state.savedSearches));
+}
+
+function findSearchEntry(id) {
+  return state.savedSearches.find((entry) => entry.id === id) || null;
+}
+
+function searchMatchKey(match) {
+  return `${match.path}:${match.start}:${match.end}:${match.text}`;
+}
+
+function normalizeSavedSearchValues(values = {}) {
+  return {
+    query: String(values.query || ''),
+    replace: String(values.replace || ''),
+    options: {
+      regex: Boolean(values.options?.regex),
+      caseSensitive: Boolean(values.options?.caseSensitive),
+      wholeWord: Boolean(values.options?.wholeWord),
+    },
+    scopeAll: Boolean(values.scopeAll),
+  };
 }
 
 function scheduleFindQueryFocus() {
   const focusQuery = () => {
     if (!state.findFocusPending) return;
-    const input = $('#find-query', elements.leftContent);
+    const input = $('#find-query', elements.findDockContent);
     if (!input?.isConnected) return;
     window.focus();
     input.focus({ preventScroll: true });
@@ -453,14 +513,12 @@ function activateSearchPanel(forceAll = false) {
   const find = ensureFindState();
   const alreadyOpen = Boolean(
     state.book
-    && state.leftVisible
-    && state.leftPanel === 'search'
+    && state.findVisible
     && $('#find-query')
   );
   if (forceAll) find.scopeAll = true;
   if (!find.activePath) find.activePath = state.activePath;
-  state.leftPanel = 'search';
-  state.leftVisible = true;
+  state.findVisible = true;
   state.findFocusPending = true;
   window.focus();
   if (alreadyOpen) {
@@ -472,51 +530,82 @@ function activateSearchPanel(forceAll = false) {
     scheduleFindQueryFocus();
     return;
   }
-  if (state.book && !elements.workspace.hidden) renderSidebar('left');
+  if (state.book && !elements.workspace.hidden) renderSearchDock();
   else renderShell();
+}
+
+function renderSearchDock() {
+  if (!state.book) return;
+  elements.findDock.hidden = !state.findVisible;
+  if (!state.findVisible) return;
+  renderSearchPanel();
 }
 
 function renderSearchPanel() {
   const find = ensureFindState();
   const checked = (value) => value ? ' checked' : '';
-  elements.leftContent.innerHTML = `
+  const savedOptions = state.savedSearches.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join('');
+  elements.findDockContent.innerHTML = `
+    <div class="find-dock-header">
+      <strong>查找与替换</strong>
+      <span id="find-count" class="count-label">0 个结果</span>
+      <span class="find-dock-spacer"></span>
+      <button type="button" class="mini-button" data-command="find-close" title="关闭查找 (Esc)">关闭</button>
+    </div>
     <div class="find-panel">
       <div class="find-row">
-        <input id="find-query" type="text" value="${escapeHtml(find.query)}" placeholder="查找" autocomplete="off" spellcheck="false">
-        <span id="find-count" class="count-label">0 个结果</span>
+        <input id="find-query" type="text" value="${escapeHtml(find.query)}" placeholder="查找（Enter：下一个，Shift+Enter：上一个）" autocomplete="off" spellcheck="false">
+        <button type="button" class="mini-button" id="find-prev" title="上一个结果 (Shift+Enter)">‹</button>
+        <button type="button" class="mini-button" id="find-next" title="下一个结果 (Enter)">›</button>
       </div>
       <div class="find-row">
-        <input id="find-replace" type="text" value="${escapeHtml(find.replace)}" placeholder="替换为" autocomplete="off" spellcheck="false">
-      </div>
-      <div class="find-options">
-        <label title="正则表达式"><input id="find-regex" type="checkbox"${checked(find.options.regex)}> 正则</label>
-        <label title="区分大小写"><input id="find-case" type="checkbox"${checked(find.options.caseSensitive)}> 大小写</label>
-        <label title="全词匹配"><input id="find-word" type="checkbox"${checked(find.options.wholeWord)}> 全词</label>
-        <label title="搜索范围：整本书"><input id="find-all-scope" type="checkbox"${checked(find.scopeAll)}> 全书</label>
-      </div>
-      <div class="find-actions">
-        <button type="button" class="mini-button" id="find-prev" title="上一个结果 (Shift+Enter)">上一个</button>
-        <button type="button" class="mini-button" id="find-next" title="下一个结果 (Enter)">下一个</button>
+        <input id="find-replace" type="text" value="${escapeHtml(find.replace)}" placeholder="替换为；正则可用 $1、$2 引用捕获组" autocomplete="off" spellcheck="false">
         <button type="button" class="mini-button" id="replace-current" title="替换当前结果">替换</button>
+        <button type="button" class="mini-button" id="replace-selected" title="替换勾选的替换点">替换选中</button>
         <button type="button" class="mini-button" id="replace-all" title="替换全部结果">全部替换</button>
+      </div>
+      <div class="find-row find-utility-row">
+        <div class="find-options">
+          <label title="正则表达式"><input id="find-regex" type="checkbox"${checked(find.options.regex)}> 正则</label>
+          <label title="区分大小写"><input id="find-case" type="checkbox"${checked(find.options.caseSensitive)}> 大小写</label>
+          <label title="全词匹配"><input id="find-word" type="checkbox"${checked(find.options.wholeWord)}> 全词</label>
+          <label title="搜索范围：整本书"><input id="find-all-scope" type="checkbox"${checked(find.scopeAll)}> 全书</label>
+        </div>
+        <button type="button" class="mini-button" id="count-all">计数</button>
+        <button type="button" class="mini-button" id="toggle-select-all" title="全选或取消全部替换点">全选</button>
+        <button type="button" class="mini-button" id="dry-run" title="先预览替换点，不修改文件">干运行</button>
+        <button type="button" class="mini-button" id="restart-search" title="清空位置并重新搜索">重启搜索</button>
+      </div>
+      <div class="find-row saved-search-row">
+        <select id="saved-search-select" aria-label="保存的搜索" ${state.savedSearches.length ? '' : 'disabled'}>
+          <option value="">保存的搜索…</option>${savedOptions}
+        </select>
+        <button type="button" class="mini-button" id="saved-search-load" title="加载选中的搜索">载入</button>
+        <button type="button" class="mini-button" id="saved-search-apply" title="加载选中搜索并替换全部">应用</button>
+        <button type="button" class="mini-button" id="saved-search-save" title="将当前条件保存为新搜索">保存</button>
+        <button type="button" class="mini-button" id="saved-search-update" title="用当前条件更新选中搜索" ${state.savedSearches.length ? '' : 'disabled'}>更新</button>
+        <button type="button" class="mini-button" id="saved-search-delete" title="删除选中搜索" ${state.savedSearches.length ? '' : 'disabled'}>删除</button>
+        <button type="button" class="mini-button" id="saved-search-import">导入</button>
+        <button type="button" class="mini-button" id="saved-search-export">导出</button>
       </div>
       <p class="find-status" id="find-status"></p>
     </div>
     <div id="find-results" class="find-results"></div>`;
 
-  const queryInput = $('#find-query', elements.leftContent);
-  const replaceInput = $('#find-replace', elements.leftContent);
-  const count = $('#find-count', elements.leftContent);
-  const status = $('#find-status', elements.leftContent);
-  const resultList = $('#find-results', elements.leftContent);
-  const optionInputs = $$('#find-regex, #find-case, #find-word, #find-all-scope', elements.leftContent);
+  const root = elements.findDockContent;
+  const queryInput = $('#find-query', root);
+  const replaceInput = $('#find-replace', root);
+  const count = $('#find-count', root);
+  const status = $('#find-status', root);
+  const resultList = $('#find-results', root);
+  const optionInputs = $$('#find-regex, #find-case, #find-word, #find-all-scope', root);
 
   const readOptions = () => ({
-    regex: $('#find-regex', elements.leftContent).checked,
-    caseSensitive: $('#find-case', elements.leftContent).checked,
-    wholeWord: $('#find-word', elements.leftContent).checked,
+    regex: $('#find-regex', root).checked,
+    caseSensitive: $('#find-case', root).checked,
+    wholeWord: $('#find-word', root).checked,
   });
-  const readScopeAll = () => $('#find-all-scope', elements.leftContent).checked;
+  const readScopeAll = () => $('#find-all-scope', root).checked;
   const syncOptions = () => {
     find.options = readOptions();
     find.scopeAll = readScopeAll();
@@ -526,16 +615,20 @@ function renderSearchPanel() {
     if (find.error) {
       count.textContent = '表达式错误';
       status.textContent = find.error.message || '表达式无效。';
-    } else if (!find.query) {
+      return;
+    }
+    if (!find.query) {
       count.textContent = '0 个结果';
-      status.textContent = '输入关键词后按 Enter 查找，Shift+Enter 查找上一个。';
-    } else if (!find.matches.length) {
+      status.textContent = '输入关键词后按 Enter 查找；可保存常用搜索并在以后重复应用。';
+      return;
+    }
+    if (!find.matches.length) {
       count.textContent = '0 个结果';
       status.textContent = '没有匹配结果。';
-    } else {
-      count.textContent = `${find.matches.length} 个结果`;
-      status.textContent = `第 ${find.index + 1} / ${find.matches.length} 个结果 · ${find.scopeAll ? '整本书' : '当前文件'}`;
+      return;
     }
+    count.textContent = `${find.matches.length} 个结果`;
+    status.textContent = `第 ${find.index + 1} / ${find.matches.length} 个结果 · ${find.scopeAll ? '整本书' : '当前文件'} · 已选 ${find.selected.length} 处`;
   };
 
   const renderResults = () => {
@@ -545,7 +638,7 @@ function renderSearchPanel() {
       return;
     }
     if (!find.query) {
-      resultList.innerHTML = '<div class="empty-state"><strong>输入关键词</strong><p>可在当前文件或整本书中查找并替换。</p></div>';
+      resultList.innerHTML = '<div class="empty-state"><strong>输入关键词</strong><p>可在当前文件或整本书中查找、预览和替换。</p></div>';
       return;
     }
     if (!find.matches.length) {
@@ -555,6 +648,7 @@ function renderSearchPanel() {
     const counts = new Map();
     for (const match of find.matches) counts.set(match.path, (counts.get(match.path) || 0) + 1);
     const visible = find.matches.slice(0, 200);
+    const selectedKeys = new Set(find.selected);
     let html = '';
     let currentPath = '';
     for (const [index, match] of visible.entries()) {
@@ -563,10 +657,12 @@ function renderSearchPanel() {
         currentPath = match.path;
         html += `<div class="result-file"><div class="result-file-heading"><span title="${escapeHtml(match.path)}">${escapeHtml(match.path)}</span><span class="tree-meta">${counts.get(match.path)}</span></div>`;
       }
-      html += `<button class="search-hit ${index === find.index ? 'active' : ''}" data-find-index="${index}">
-        <span>${highlightExcerpt(match.excerpt || match.text, match.text)}</span>
-        <small>第 ${match.line || 1} 行，第 ${match.column || 1} 列</small>
-      </button>`;
+      const key = escapeHtml(searchMatchKey(match));
+      html += `<div class="search-hit ${index === find.index ? 'active' : ''}" data-find-index="${index}">
+        <label class="result-select" title="选择/取消这个替换点"><input type="checkbox" data-find-select="${key}"${selectedKeys.has(searchMatchKey(match)) ? ' checked' : ''}></label>
+        <span class="result-text">${highlightExcerpt(match.excerpt || match.text, match.text)}</span>
+        <small>第 ${match.line || 1} 行 · ${escapeHtml(match.replacement ?? find.replace)}${match.replacement !== undefined ? '（预览）' : ''}</small>
+      </div>`;
     }
     if (currentPath) html += '</div>';
     if (find.matches.length > visible.length) html += `<p class="find-status">仅显示前 ${visible.length} 个结果。</p>`;
@@ -580,8 +676,7 @@ function renderSearchPanel() {
       .slice(0, find.index)
       .filter((candidate) => candidate.path === match.path && candidate.text === match.text).length;
     goToFindMatch(match, { options: find.options, occurrence });
-    state.findFocusPending = true;
-    scheduleFindQueryFocus();
+    queryInput.focus({ preventScroll: true });
   };
 
   const runSearch = ({ goNext = true, reveal = goNext } = {}) => {
@@ -590,6 +685,7 @@ function renderSearchPanel() {
     find.replace = replaceInput.value;
     syncOptions();
     find.error = null;
+    find.selected = [];
     if (!query) {
       find.matches = [];
       find.index = -1;
@@ -605,7 +701,11 @@ function renderSearchPanel() {
       find.scopeAll ? null : [state.activePath],
     );
     find.error = result.error || null;
-    find.matches = result.error ? [] : (result.results || []).flatMap((file) => file.matches.map((match) => ({ ...match, path: file.path })));
+    find.matches = result.error ? [] : (result.results || []).flatMap((file) => file.matches.map((match) => ({
+      ...match,
+      path: file.path,
+      replacement: expandReplacement(find.replace, match, find.options),
+    })));
     find.activePath = state.activePath;
     if (!find.matches.length) find.index = -1;
     else if (goNext) find.index = (find.index + 1 + find.matches.length) % find.matches.length;
@@ -626,6 +726,14 @@ function renderSearchPanel() {
     revealCurrent();
   };
 
+  const writeResource = (filePath, text) => {
+    const resource = state.book.getResource(filePath);
+    if (!resource) return;
+    resource.text = text;
+    resource.bytes = new TextEncoder().encode(text);
+    if (filePath === state.book.opfPath) state.book.opfTextDirty = true;
+  };
+
   const replaceCurrent = () => {
     find.replace = replaceInput.value;
     syncOptions();
@@ -637,21 +745,50 @@ function renderSearchPanel() {
     const resource = state.book.getResource(match.path);
     if (!resource?.text) return;
     const replacement = expandReplacement(find.replace, match, find.options);
-    resource.text = resource.text.slice(0, match.start) + replacement + resource.text.slice(match.end);
-    resource.bytes = new TextEncoder().encode(resource.text);
+    writeResource(match.path, resource.text.slice(0, match.start) + replacement + resource.text.slice(match.end));
     state.book.dirty = true;
-    const shift = replacement.length - match.text.length;
-    for (const candidate of find.matches) {
-      if (candidate === match) continue;
-      if (candidate.path === match.path && candidate.start > match.start) {
-        candidate.start += shift;
-        candidate.end += shift;
-      }
-    }
     updateDirtyStatus();
     if (state.activePath === match.path) renderDocument();
     runSearch({ goNext: false, reveal: false });
     status.textContent = '已替换 1 处。';
+    requestAnimationFrame(() => replaceInput.focus({ preventScroll: true }));
+  };
+
+  const replaceSelected = () => {
+    find.replace = replaceInput.value;
+    syncOptions();
+    if (find.error || !find.query) return;
+    if (!find.selected.length) {
+      status.textContent = '请先在结果列表中勾选要替换的替换点。';
+      return;
+    }
+    const selectedKeys = new Set(find.selected);
+    const selected = find.matches.filter((match) => selectedKeys.has(searchMatchKey(match)));
+    const byPath = new Map();
+    for (const match of selected) {
+      if (!byPath.has(match.path)) byPath.set(match.path, []);
+      byPath.get(match.path).push(match);
+    }
+    let total = 0;
+    for (const [filePath, matches] of byPath) {
+      const resource = state.book.getResource(filePath);
+      if (!resource?.text) continue;
+      const result = replaceMatchesAtOffsets(resource.text, matches, find.replace, find.options);
+      if (!result.count) continue;
+      writeResource(filePath, result.text);
+      total += result.count;
+    }
+    if (!total) {
+      status.textContent = '没有可替换的选中结果。';
+      return;
+    }
+    state.book.dirty = true;
+    clearAssetCache();
+    renderDocument();
+    updateDirtyStatus();
+    runSearch({ goNext: false, reveal: false });
+    status.textContent = `已替换选中 ${total} 处。`;
+    toast('替换完成', `${total} 处`);
     requestAnimationFrame(() => replaceInput.focus({ preventScroll: true }));
   };
 
@@ -668,10 +805,8 @@ function renderSearchPanel() {
       if (!resource?.text) continue;
       const result = replaceMatches(resource.text, find.query, find.replace, find.options);
       if (!result.count) continue;
-      resource.text = result.text;
-      resource.bytes = new TextEncoder().encode(result.text);
+      writeResource(filePath, result.text);
       total += result.count;
-      if (filePath === state.book.opfPath) state.book.opfTextDirty = true;
     }
     if (!total) {
       status.textContent = '没有可替换的结果。';
@@ -687,43 +822,216 @@ function renderSearchPanel() {
     requestAnimationFrame(() => replaceInput.focus({ preventScroll: true }));
   };
 
+  const currentSearchValues = () => ({
+    query: queryInput.value,
+    replace: replaceInput.value,
+    options: readOptions(),
+    scopeAll: readScopeAll(),
+  });
+
+  const loadSearchValues = (entry, { run = true } = {}) => {
+    queryInput.value = entry.query;
+    replaceInput.value = entry.replace || '';
+    $('#find-regex', root).checked = Boolean(entry.options?.regex);
+    $('#find-case', root).checked = Boolean(entry.options?.caseSensitive);
+    $('#find-word', root).checked = Boolean(entry.options?.wholeWord);
+    $('#find-all-scope', root).checked = Boolean(entry.scopeAll);
+    find.options = readOptions();
+    find.scopeAll = readScopeAll();
+    if (run) runSearch({ goNext: false, reveal: false });
+  };
+
+  const selectedSavedSearch = () => {
+    const id = $('#saved-search-select', root).value;
+    return findSearchEntry(id);
+  };
+
+  const saveCurrentSearch = async () => {
+    const values = currentSearchValues();
+    if (!values.query) {
+      status.textContent = '请先输入要保存的查找条件。';
+      return;
+    }
+    const name = await promptDialog({ title: '保存搜索', label: '搜索名称', value: values.query.slice(0, 50), required: true });
+    if (!name) return;
+    state.savedSearches.push({
+      id: uuid(),
+      name,
+      ...normalizeSavedSearchValues(values),
+      updatedAt: new Date().toISOString(),
+    });
+    saveSavedSearches();
+    renderSearchPanel();
+    status.textContent = `已保存搜索：${name}`;
+  };
+
+  const updateCurrentSearch = async () => {
+    const entry = selectedSavedSearch();
+    if (!entry) return;
+    const proceed = await confirmDialog({
+      title: '更新保存的搜索',
+      message: `将“${entry.name}”更新为当前查找条件？`,
+      confirmLabel: '更新',
+    });
+    if (!proceed) return;
+    Object.assign(entry, normalizeSavedSearchValues(currentSearchValues()), { updatedAt: new Date().toISOString() });
+    saveSavedSearches();
+    renderSearchPanel();
+    status.textContent = `已更新搜索：${entry.name}`;
+  };
+
+  const deleteSavedSearch = async () => {
+    const entry = selectedSavedSearch();
+    if (!entry) return;
+    const proceed = await confirmDialog({
+      title: '删除保存的搜索',
+      message: `确定删除“${entry.name}”？`,
+      confirmLabel: '删除',
+      danger: true,
+    });
+    if (!proceed) return;
+    state.savedSearches = state.savedSearches.filter((item) => item.id !== entry.id);
+    saveSavedSearches();
+    renderSearchPanel();
+    status.textContent = '保存的搜索已删除。';
+  };
+
+  const importSavedSearches = async () => {
+    const files = await window.studio.openTextFiles([{ name: 'JSON', extensions: ['json'] }], false);
+    if (!files.length) return;
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(files[0].data));
+      const incoming = (Array.isArray(parsed) ? parsed : parsed.searches || []).map((item) => ({
+        id: String(item.id || uuid()),
+        name: String(item.name || '未命名搜索'),
+        ...normalizeSavedSearchValues(item),
+        updatedAt: new Date().toISOString(),
+      })).filter((item) => item.query);
+      const existing = new Set(state.savedSearches.map((item) => item.id));
+      const added = incoming.filter((item) => !existing.has(item.id));
+      state.savedSearches.push(...added);
+      saveSavedSearches();
+      renderSearchPanel();
+      status.textContent = `已导入 ${added.length} 条保存搜索。`;
+      toast('导入完成', `${added.length} 条搜索`);
+    } catch (error) {
+      status.textContent = `导入失败：${errorMessage(error)}`;
+    }
+  };
+
+  const exportSavedSearches = async () => {
+    if (!state.savedSearches.length) {
+      status.textContent = '暂无保存搜索可导出。';
+      return;
+    }
+    const content = JSON.stringify(state.savedSearches, null, 2);
+    const target = await window.studio.saveText(content, 'saved-searches.json', [{ name: 'JSON', extensions: ['json'] }]);
+    if (target) {
+      status.textContent = `已导出到 ${target}`;
+      toast('保存搜索已导出', target);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    const selectedKeys = new Set(find.selected);
+    const allVisible = find.matches.length && find.matches.every((match) => selectedKeys.has(searchMatchKey(match)));
+    find.selected = allVisible ? [] : find.matches.map(searchMatchKey);
+    updateStatus();
+    renderResults();
+  };
+
   queryInput.addEventListener('input', () => {
     clearTimeout(searchDebounce);
     find.query = queryInput.value;
     find.matches = [];
     find.index = -1;
+    find.selected = [];
     find.error = null;
     updateStatus();
     renderResults();
     searchDebounce = setTimeout(() => runSearch({ goNext: false, reveal: false }), 180);
   });
   queryInput.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    clearTimeout(searchDebounce);
-    step(event.shiftKey ? -1 : 1);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      executeCommand('find-close');
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      clearTimeout(searchDebounce);
+      step(event.shiftKey ? -1 : 1);
+    }
   });
   replaceInput.addEventListener('input', () => { find.replace = replaceInput.value; });
   replaceInput.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    replaceCurrent();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      executeCommand('find-close');
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      replaceCurrent();
+    }
   });
-  $('#find-prev', elements.leftContent).addEventListener('click', () => step(-1));
-  $('#find-next', elements.leftContent).addEventListener('click', () => step(1));
-  $('#replace-current', elements.leftContent).addEventListener('click', replaceCurrent);
-  $('#replace-all', elements.leftContent).addEventListener('click', replaceAll);
+  $('#find-prev', root).addEventListener('click', () => step(-1));
+  $('#find-next', root).addEventListener('click', () => step(1));
+  $('#replace-current', root).addEventListener('click', replaceCurrent);
+  $('#replace-selected', root).addEventListener('click', replaceSelected);
+  $('#replace-all', root).addEventListener('click', replaceAll);
+  $('#count-all', root).addEventListener('click', () => {
+    runSearch({ goNext: false, reveal: false });
+    if (!find.error && find.query) status.textContent = `共找到 ${find.matches.length} 个替换点。`;
+  });
+  $('#toggle-select-all', root).addEventListener('click', toggleSelectAll);
+  $('#dry-run', root).addEventListener('click', () => {
+    runSearch({ goNext: false, reveal: false });
+    if (!find.error && find.query) {
+      status.textContent = `干运行：将替换 ${find.matches.length} 处；检查下方预览后可执行替换。`;
+    }
+  });
+  $('#restart-search', root).addEventListener('click', () => {
+    find.index = -1;
+    find.selected = [];
+    runSearch({ goNext: false, reveal: false });
+  });
+  $('#saved-search-save', root).addEventListener('click', () => saveCurrentSearch());
+  $('#saved-search-update', root).addEventListener('click', () => updateCurrentSearch());
+  $('#saved-search-delete', root).addEventListener('click', () => deleteSavedSearch());
+  $('#saved-search-import', root).addEventListener('click', () => importSavedSearches());
+  $('#saved-search-export', root).addEventListener('click', () => exportSavedSearches());
+  $('#saved-search-load', root).addEventListener('click', () => {
+    const entry = selectedSavedSearch();
+    if (entry) loadSearchValues(entry);
+    else status.textContent = '请选择一条保存搜索。';
+  });
+  $('#saved-search-apply', root).addEventListener('click', () => {
+    const entry = selectedSavedSearch();
+    if (!entry) {
+      status.textContent = '请选择一条保存搜索。';
+      return;
+    }
+    loadSearchValues(entry, { run: false });
+    replaceAll();
+  });
   for (const input of optionInputs) {
     input.addEventListener('change', () => {
       clearTimeout(searchDebounce);
       syncOptions();
       find.matches = [];
       find.index = -1;
+      find.selected = [];
       find.error = null;
       runSearch({ goNext: false, reveal: false });
     });
   }
+  resultList.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-find-select]');
+    if (!checkbox) return;
+    const key = checkbox.dataset.findSelect;
+    find.selected = find.selected.filter((item) => item !== key);
+    if (checkbox.checked) find.selected.push(key);
+    updateStatus();
+  });
   resultList.addEventListener('click', (event) => {
+    if (event.target.closest('[data-find-select]')) return;
     const button = event.target.closest('[data-find-index]');
     if (!button) return;
     find.index = Number(button.dataset.findIndex);
@@ -736,7 +1044,6 @@ function renderSearchPanel() {
   renderResults();
   if (state.findFocusPending) scheduleFindQueryFocus();
 }
-
 function highlightExcerpt(excerpt, query) {
   if (!query) return escapeHtml(excerpt);
   try {
@@ -893,6 +1200,7 @@ async function loadBook(payload, { keepDirty = false } = {}) {
   state.validation = null;
   state.report = null;
   state.find = null;
+  state.findVisible = false;
   state.findFocusPending = false;
   state.tocSelectedIndex = '';
   state.bookmarks = loadBookmarks(book);
@@ -932,6 +1240,7 @@ async function createBook(version) {
   state.validation = null;
   state.report = null;
   state.find = null;
+  state.findVisible = false;
   state.findFocusPending = false;
   const chapter = book.spineResources()[0]?.item.path || book.manifestItems().find((item) => isHtmlPath(item.path))?.path;
   state.openPaths = chapter ? [chapter] : [];
@@ -971,6 +1280,7 @@ async function closeBook() {
   resourceViewLocations.clear();
   state.bookmarks = [];
   state.find = null;
+  state.findVisible = false;
   state.findFocusPending = false;
   editor = null;
   pendingViewLocation = null;
@@ -1032,6 +1342,11 @@ async function executeCommandInner(payload, extra = {}) {
     case 'toggle-right': state.rightVisible = !state.rightVisible; applyWorkspaceLayout(); break;
     case 'find': activateSearchPanel(false); break;
     case 'find-all': activateSearchPanel(true); break;
+    case 'find-close':
+      state.findVisible = false;
+      state.findFocusPending = false;
+      if (elements.findDock) elements.findDock.hidden = true;
+      break;
     case 'print': await window.studio.print(); break;
     case 'export-pdf': await exportPdf(); break;
     case 'show-metadata': await showRightPanel('metadata'); break;
@@ -1232,7 +1547,7 @@ function bindGlobalEvents() {
       const sidebar = panel.closest('[data-sidebar]')?.dataset.sidebar;
       if (sidebar === 'left') {
         state.leftPanel = panel.dataset.panel;
-        if (state.leftPanel !== 'search') state.findFocusPending = false;
+        state.findFocusPending = false;
       }
       if (sidebar === 'right') {
         state.rightPanel = panel.dataset.panel;
@@ -1387,6 +1702,7 @@ async function initialize() {
   await reloadFromSettings();
   bindGlobalEvents();
   state.clips = loadClips();
+  state.savedSearches = loadSavedSearches();
   renderShell();
   setStatus('就绪');
 }

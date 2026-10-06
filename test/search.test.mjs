@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSearchRegExp, findMatches, replaceMatches } from '../src/renderer/core/search.mjs';
+import { buildSearchRegExp, findMatches, replaceMatches, replaceMatchesAtOffsets } from '../src/renderer/core/search.mjs';
 
 test('finds literal matches with Unicode-aware word boundaries', () => {
   const matches = findMatches('One cat, catalog and Cat.', 'cat', { caseSensitive: false, wholeWord: true });
@@ -13,6 +13,14 @@ test('supports regular expressions and capture replacements', () => {
   const result = replaceMatches('id="a1" id="b2"', 'id="([a-z])(\\d)"', 'data-key="$1$2"', { regex: true });
   assert.equal(result.count, 2);
   assert.equal(result.text, 'data-key="a1" data-key="b2"');
+});
+
+test('replaces selected matches without disturbing other offsets', () => {
+  const source = 'alpha beta alpha beta alpha';
+  const matches = findMatches(source, 'alpha', { regex: false });
+  const result = replaceMatchesAtOffsets(source, [matches[0], matches[2]], '<x>&</x>', { regex: false });
+  assert.equal(result.count, 2);
+  assert.equal(result.text, '<x>&</x> beta alpha beta <x>&</x>');
 });
 
 test('reports invalid expressions', () => {

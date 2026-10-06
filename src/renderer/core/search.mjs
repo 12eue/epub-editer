@@ -62,6 +62,25 @@ export function replaceMatches(text, query, replacement, options = {}) {
   return { text: result, count: matches.length };
 }
 
+export function replaceMatchesAtOffsets(text, matches, replacement, options = {}) {
+  const sorted = [...matches]
+    .filter((match) => Number.isInteger(match.start) && Number.isInteger(match.end))
+    .sort((a, b) => b.start - a.start);
+  let result = text;
+  let cursor = text.length;
+  let count = 0;
+  for (const match of sorted) {
+    if (match.start < 0 || match.end > text.length || match.end < match.start) continue;
+    if (match.end > cursor) continue;
+    result = result.slice(0, match.start)
+      + expandReplacement(replacement, match, options)
+      + result.slice(match.end);
+    cursor = match.start;
+    count += 1;
+  }
+  return { text: result, count };
+}
+
 export function searchBook(book, query, options = {}, scopePaths = null) {
   const results = [];
   const allowed = scopePaths ? new Set(scopePaths) : null;

@@ -372,9 +372,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .result-file { margin-top: 4px; }
 .result-file-heading { display: flex; gap: 6px; align-items: center; justify-content: space-between; padding: 5px 9px; color: var(--muted); background: var(--surface-2); border-radius: 5px; font-size: 11px; font-weight: 650; }
 .result-file-heading span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.search-hit { display: grid; gap: 2px; width: 100%; padding: 5px 12px; color: var(--text); background: transparent; cursor: pointer; text-align: left; }
+.search-hit {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 3px 6px;
+  width: 100%;
+  padding: 5px 9px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+.search-hit .result-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-hit .result-select { display: inline-flex; align-items: center; }
+.search-hit .result-select input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
+.search-hit small { grid-column: 2; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-hit:hover { background: var(--surface-3); }
-.search-hit small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-hit mark { padding: 0 2px; background: color-mix(in srgb, var(--warning) 35%, transparent); color: inherit; border-radius: 2px; }
 
 .validation-summary { display: flex; gap: 5px; padding: 8px; }
@@ -583,8 +597,39 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .find-row .count-label { min-width: 82px; color: var(--muted); text-align: right; }
 .find-options { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; }
 .find-options label { display: flex; align-items: center; gap: 5px; }
-.find-panel { display: grid; gap: 7px; padding: 8px; border-bottom: 1px solid var(--border); }
+.find-dock {
+  flex: 0 0 auto;
+  min-height: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -5px 18px rgba(15, 23, 32, .09);
+}
+.find-dock-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(48vh, 340px);
+}
+.find-dock-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 9px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.find-dock-header strong { color: var(--accent-strong); }
+.find-dock-header .count-label { min-width: 82px; color: var(--muted); }
+.find-dock-spacer { flex: 1; }
+.find-panel { display: grid; flex: 0 0 auto; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); }
 .find-panel .find-row { gap: 5px; }
+.find-utility-row { justify-content: space-between; }
+.find-utility-row .find-options { flex: 1; }
+.saved-search-row select { flex: 1; min-width: 120px; min-height: 27px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-small); color: var(--text); font-size: 12px; }
+.saved-search-row .mini-button { flex: 0 0 auto; }
 .find-panel input[type="text"],
 .find-panel input[type="search"] { min-width: 0; min-height: 28px; padding: 3px 7px; font-size: 12px; }
 .find-panel .count-label { min-width: 58px; font-size: 11px; }
@@ -594,7 +639,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .find-actions { display: flex; flex-wrap: wrap; gap: 3px; }
 .find-actions button { min-height: 24px; padding: 0 7px; font-size: 11px; }
 .find-status { min-height: 16px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
-.find-results { min-height: 0; overflow: auto; }
+.find-results { flex: 1 1 auto; min-height: 96px; overflow: auto; background: var(--surface); }
 .find-results .search-hit.active { background: var(--accent-soft); }
 .character-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; }
 .character-grid button { aspect-ratio: 1; padding: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 16px; }
