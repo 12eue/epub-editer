@@ -67,7 +67,7 @@
       "shortcutName": "EPUB Studio"
     },
     "dmg": {
-      "title": "${productName} ${version}"
+      "title": "${productName} ${version}${arch}"
     },
     "fileAssociations": [
       {
